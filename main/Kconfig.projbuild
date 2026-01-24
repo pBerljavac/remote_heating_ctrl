@@ -1,0 +1,26 @@
+menu "Example Configuration"
+    config EXAMPLE_HTTP_ENDPOINT
+        string "Example HTTP Endpoint"
+        default "httpbin.org"
+        help
+            Target endpoint host-name for the example to use.
+    config EXAMPLE_ENABLE_RESPONSE_BUFFER_DUMP
+        bool "Enable logging response buffer from HTTP event handler"
+        default n
+        help
+            HTTP response is accumulated in output_buffer. Enable this config to print the accumulated response
+
+    config T_THRES_UPPR
+        int "Upper temperature threshold"
+        range 0 50
+        default 25
+        help
+            Upper temperature threshold.
+
+    config T_THRES_LOWR
+        int "Lower temperature threshold"
+        range 0 50
+        default 23
+        help
+            Lower temperature threshold.
+endmenu
