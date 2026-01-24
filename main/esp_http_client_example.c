@@ -1131,8 +1131,8 @@ static void http_test_task_mod(void *pvParameters)
     }
 
     // //DEBUG
-    // //Get control status
-    // http_rest_with_url_get_ctrl_sts();
+    //Get control status
+    http_rest_with_url_get_ctrl_sts();
 
     // //Post operation mode
     // http_rest_with_url_post_op_mode("Control individually");
