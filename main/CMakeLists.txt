@@ -7,7 +7,7 @@ idf_build_get_property(target IDF_TARGET)
 if(${target} STREQUAL "linux")
     list(APPEND requires esp_stubs protocol_examples_common)
 endif()
-idf_component_register(SRCS "esp_http_client_example.c"
+idf_component_register(SRCS "remote_heating_ctrl.c"
                     INCLUDE_DIRS "."
                     PRIV_REQUIRES ${requires}
                     EMBED_TXTFILES howsmyssl_com_root_cert.pem)
