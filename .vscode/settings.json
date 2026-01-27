@@ -14,7 +14,7 @@
   "clangd.arguments": [
     "--background-index",
     "--query-driver=**",
-    "--compile-commands-dir=/home/paolo/projects/esp32/http_client_example/build"
+    "--compile-commands-dir=/home/paolo/projects/esp32/remote_heating_ctrl/build"
   ],
   "idf.flashType": "JTAG"
 }

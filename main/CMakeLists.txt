@@ -1,7 +1,7 @@
 # Embed the server root certificate into the final binary
 #
 # (If this was a component, we would set COMPONENT_EMBED_TXTFILES here.)
-set(requires esp-tls nvs_flash esp_event esp_netif esp_http_client)
+set(requires esp-tls nvs_flash esp_event esp_netif esp_http_client esp_adc)
 idf_build_get_property(target IDF_TARGET)
 
 if(${target} STREQUAL "linux")

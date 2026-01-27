@@ -9,18 +9,22 @@ menu "Example Configuration"
         default n
         help
             HTTP response is accumulated in output_buffer. Enable this config to print the accumulated response
-
     config T_THRES_UPPR
         int "Upper temperature threshold"
         range 0 50
         default 25
         help
             Upper temperature threshold.
-
     config T_THRES_LOWR
         int "Lower temperature threshold"
         range 0 50
         default 23
         help
             Lower temperature threshold.
+    config DISPLAY_PERIOD
+        int "Display period"
+        range 10 10000
+        default 1000
+        help
+            Display period.
 endmenu
