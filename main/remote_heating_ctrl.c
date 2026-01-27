@@ -11,6 +11,7 @@
 #include <sys/param.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <math.h>
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "esp_event.h"
@@ -43,8 +44,14 @@
 #define ADC_READ_LEN 256
 
 static TaskHandle_t s_task_handle;
+static QueueHandle_t g_temp_queue = NULL;
 
 static const char *TAG = "HTTP_CLIENT"; //hmm
+
+//Helper function
+int8_t roundint8f(float value) {
+    return (int8_t)(value + (value >= 0 ? 0.5f : -0.5f));
+}
 
 /* Root cert for howsmyssl.com, taken from howsmyssl_com_root_cert.pem
 
@@ -1112,7 +1119,12 @@ static void http_test_task_mod(void *pvParameters)
 {
     bool bEnaRemoteCtrl = false;
 
-    uint8_t tSnsr = 22;
+    float roomTemp = 0.0f;
+    uint8_t tSnsr = 0u;
+    if (xQueueReceive(g_temp_queue, &roomTemp, 0)) {
+        uint8_t tSnsr = roundint8f(roomTemp);
+        // use tSnsr...
+    }
 
     if (true == bEnaRemoteCtrl) //Configure external input to enable remote control
     {
@@ -1226,10 +1238,8 @@ void adc_read(void *pvParameters)
     ESP_ERROR_CHECK(adc_continuous_register_event_callbacks(handle, &cbs, NULL));
     ESP_ERROR_CHECK(adc_continuous_start(handle));
 
-
     while (1)
     {
-
         /**
          * This is to show you the way to use the ADC continuous mode driver event callback.
          * This `ulTaskNotifyTake` will block when the data processing in the task is fast.
@@ -1242,6 +1252,8 @@ void adc_read(void *pvParameters)
 
         while (1)
         {
+            float roomTemp = 0.f;
+
             ret = adc_continuous_read(handle, result, ADC_READ_LEN, &ret_num, 0);
             if (ret == ESP_OK)
             {
@@ -1276,7 +1288,7 @@ void adc_read(void *pvParameters)
                     //Rough reading of just the last data sample
                     if (parsed_data[num_parsed_samples - 1].valid)
                     {
-                        float roomTemp = (float)(parsed_data[num_parsed_samples - 1].raw_data) * 0.1f;
+                        roomTemp = (float)(parsed_data[num_parsed_samples - 1].raw_data) * 0.1f;
 
                         ESP_LOGI(TAG, "ADC%d, Channel: %d, Room temperature: %.01f deg C",
                                     parsed_data[num_parsed_samples - 1].unit + 1,
@@ -1296,6 +1308,8 @@ void adc_read(void *pvParameters)
                     ESP_LOGE(TAG, "Data parsing failed: %s", esp_err_to_name(parse_ret));
                 }
 
+                xQueueOverwrite(g_temp_queue, &roomTemp);
+
                 /**
                  * Because printing is slow, so every time you call `ulTaskNotifyTake`, it will immediately return.
                  * To avoid a task watchdog timeout, add a delay here. When you replace the way you process the data,
@@ -1305,7 +1319,7 @@ void adc_read(void *pvParameters)
             }
             else if (ret == ESP_ERR_TIMEOUT)
             {
-                //We try to read `EXAMPLE_READ_LEN` until API returns timeout, which means there's no available data
+                //We try to read `ADC_READ_LEN` until API returns timeout, which means there's no available data
                 break;
             }
         }
@@ -1326,6 +1340,9 @@ void app_main(void)
       ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+
+    // Create a queue to handle task communication
+    g_temp_queue = xQueueCreate(1, sizeof(float));
 
     //Network device task init
     ESP_ERROR_CHECK(esp_netif_init());
