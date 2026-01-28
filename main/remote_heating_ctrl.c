@@ -1119,63 +1119,70 @@ static void http_test_task_mod(void *pvParameters)
 {
     bool bEnaRemoteCtrl = true;
 
-    float roomTemp = 0.0f;
-    uint8_t tSnsr = 0u;
-    if (xQueueReceive(g_temp_queue, &roomTemp, 0))
+    while (1)
     {
-        tSnsr = roundint8f(roomTemp);
-    }
+        // //Periodically check every CONFIG_HTTP_REQ_INTERVAL_MS milliseconds
+        // vTaskDelay(pdMS_TO_TICKS(CONFIG_HTTP_REQ_INTERVAL_MS));
 
-    if (true == bEnaRemoteCtrl) //Configure external input to enable remote control
-    {
-        if (tSnsr > CONFIG_T_THRES_UPPR) //Configure temperature sensor
+        //Execute remote heating control
+        float roomTemp = 0.0f;
+        uint8_t tSnsr = 0u;
+        if (xQueueReceive(g_temp_queue, &roomTemp, 0))
         {
-            //Post operation mode
-            http_rest_with_url_post_op_mode("Control individually");
-
-            //Post set temperature
-            http_rest_with_url_post_set_temp(15u);
+            tSnsr = roundint8f(roomTemp);
         }
-        else if (tSnsr < CONFIG_T_THRES_LOWR) //Configure temperature sensor
-        {
-            //Post operation mode
-            http_rest_with_url_post_op_mode("Control individually");
 
-            //Post set temperature
-            http_rest_with_url_post_set_temp(30u); //Check if to set a more efficient power
+        if (true == bEnaRemoteCtrl) //Configure external input to enable remote control
+        {
+            if (tSnsr > CONFIG_T_THRES_UPPR)
+            {
+                //Post operation mode
+                http_rest_with_url_post_op_mode("Control individually");
+
+                //Post set temperature
+                http_rest_with_url_post_set_temp(15u);
+            }
+            else if (tSnsr < CONFIG_T_THRES_LOWR)
+            {
+                //Post operation mode
+                http_rest_with_url_post_op_mode("Control individually");
+
+                //Post set temperature
+                http_rest_with_url_post_set_temp(30u); //Check if to set a more efficient power
+            }
+            else
+            {
+                //Do nothing
+            }
         }
         else
         {
-            //Do nothing
+            //Post operation mode
+            http_rest_with_url_post_op_mode("Weekly program");
         }
+
+        // //DEBUG
+        //Get control status
+        http_rest_with_url_get_ctrl_sts();
+
+        // //Post operation mode
+        // http_rest_with_url_post_op_mode("Control individually");
+        // http_rest_with_url_post_op_mode("Weekly program");
+
+        // //Get control status
+        // http_rest_with_url_get_ctrl_sts();
+
+        // //Post set temperature
+        // http_rest_with_url_post_set_temp(15u);
+        // http_rest_with_url_post_set_temp(35u);
+
+        // //Get control status
+        // http_rest_with_url_get_ctrl_sts();
+        vTaskDelay(CONFIG_DISPLAY_PERIOD / portTICK_PERIOD_MS);
     }
-    else
-    {
-        //Post operation mode
-        http_rest_with_url_post_op_mode("Weekly program");
-    }
-
-    // //DEBUG
-    //Get control status
-    http_rest_with_url_get_ctrl_sts();
-
-    // //Post operation mode
-    // http_rest_with_url_post_op_mode("Control individually");
-    // http_rest_with_url_post_op_mode("Weekly program");
-
-    // //Get control status
-    // http_rest_with_url_get_ctrl_sts();
-
-    // //Post set temperature
-    // http_rest_with_url_post_set_temp(15u);
-    // http_rest_with_url_post_set_temp(35u);
-
-    // //Get control status
-    // http_rest_with_url_get_ctrl_sts();
-
-    #if !CONFIG_IDF_TARGET_LINUX
-    vTaskDelete(NULL);
-#endif
+// #if !CONFIG_IDF_TARGET_LINUX
+//         vTaskDelete(NULL);
+// #endif
 }
 
 static bool IRAM_ATTR s_conv_done_cb(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata, void *user_data)
