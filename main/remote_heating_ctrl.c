@@ -259,8 +259,10 @@ static void http_rest_with_url(void)
     esp_http_client_cleanup(client);
 }
 
-static void http_rest_with_url_get_set_temp(void)
+static uint8_t http_rest_with_url_get_set_temp(void)
 {
+    uint8_t tSet = 0;
+
     // Declare local_response_buffer with size (MAX_HTTP_OUTPUT_BUFFER + 1) to prevent out of bound access when
     // it is used by functions like strlen(). The buffer should only be used upto size MAX_HTTP_OUTPUT_BUFFER
     char local_response_buffer[MAX_HTTP_OUTPUT_BUFFER + 1] = {0};
@@ -278,7 +280,7 @@ static void http_rest_with_url_get_set_temp(void)
 
     if (client == NULL) {
         ESP_LOGE(TAG, "Failed to initialize HTTP client");
-        return;
+        return 99u;
     }
 
     // Set method to GET (keep default) and add the JSON body
@@ -308,7 +310,11 @@ static void http_rest_with_url_get_set_temp(void)
         ESP_LOGI(TAG, "Empty response");
     }
 
+    sscanf(local_response_buffer, "{\"value\":%hhu", &tSet);
+
     esp_http_client_cleanup(client);
+
+    return tSet;
 }
 
 static void http_rest_with_url_get_ctrl_sts(void)
@@ -1117,14 +1123,13 @@ static void http_test_task(void *pvParameters)
 
 static void http_test_task_mod(void *pvParameters)
 {
-    bool bEnaRemoteCtrl = true;
-
     while (1)
     {
-        // //Periodically check every CONFIG_HTTP_REQ_INTERVAL_MS milliseconds
-        // vTaskDelay(pdMS_TO_TICKS(CONFIG_HTTP_REQ_INTERVAL_MS));
+        //Periodically check status
+        //Get control status
+        http_rest_with_url_get_ctrl_sts();
 
-        //Execute remote heating control
+        //Get room temperature
         float roomTemp = 0.0f;
         uint8_t tSnsr = 0u;
         if (xQueueReceive(g_temp_queue, &roomTemp, 0))
@@ -1132,23 +1137,50 @@ static void http_test_task_mod(void *pvParameters)
             tSnsr = roundint8f(roomTemp);
         }
 
-        if (true == bEnaRemoteCtrl) //Configure external input to enable remote control
+        if (1 == CONFIG_ENA_REMOTE_CTRL)
         {
             if (tSnsr > CONFIG_T_THRES_UPPR)
             {
+                //TO DO Check operation mode
                 //Post operation mode
                 http_rest_with_url_post_op_mode("Control individually");
 
+                //Check set temperature
+                uint8_t tSet = http_rest_with_url_get_set_temp(); //Not working the best? Log and check
                 //Post set temperature
-                http_rest_with_url_post_set_temp(15u);
+                if (tSet != 15u)
+                {
+                    http_rest_with_url_post_set_temp(15u);
+                    ESP_LOGI(TAG, "Heater set temperature adjusted to 15 C");
+                }
+
+                //Only if necessary:
+                // //Post operation mode
+                // http_rest_with_url_post_op_mode("Control individually");
+
+                // //Post set temperature
+                // http_rest_with_url_post_set_temp(15u);
             }
             else if (tSnsr < CONFIG_T_THRES_LOWR)
             {
+                //TO DO Check operation mode
                 //Post operation mode
                 http_rest_with_url_post_op_mode("Control individually");
 
+                //Check set temperature
+                uint8_t tSet = http_rest_with_url_get_set_temp();
                 //Post set temperature
-                http_rest_with_url_post_set_temp(30u); //Check if to set a more efficient power
+                if (tSet != 30u)
+                {
+                    http_rest_with_url_post_set_temp(30u);
+                    ESP_LOGI(TAG, "Heater set temperature adjusted to 30 C");
+                }
+
+                // //Post operation mode
+                // http_rest_with_url_post_op_mode("Control individually");
+
+                // //Post set temperature
+                // http_rest_with_url_post_set_temp(30u);
             }
             else
             {
@@ -1157,6 +1189,7 @@ static void http_test_task_mod(void *pvParameters)
         }
         else
         {
+            //TO DO Check operation mode
             //Post operation mode
             http_rest_with_url_post_op_mode("Weekly program");
         }
@@ -1334,8 +1367,6 @@ void adc_read(void *pvParameters)
 
     ESP_ERROR_CHECK(adc_continuous_stop(handle));
     ESP_ERROR_CHECK(adc_continuous_deinit(handle));
-
-    uint8_t tSnsr = 0;
 }
 
 void app_main(void)

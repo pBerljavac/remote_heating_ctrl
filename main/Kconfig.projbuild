@@ -9,6 +9,12 @@ menu "Example Configuration"
         default n
         help
             HTTP response is accumulated in output_buffer. Enable this config to print the accumulated response
+    config ENA_REMOTE_CTRL
+        int "Enable remote control"
+        range 0 1
+        default 1
+        help
+            Enable remote control.
     config T_THRES_UPPR
         int "Upper temperature threshold"
         range 0 50
