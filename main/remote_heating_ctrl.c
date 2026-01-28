@@ -46,7 +46,7 @@
 static TaskHandle_t s_task_handle;
 static QueueHandle_t g_temp_queue = NULL;
 
-static const char *TAG = "HTTP_CLIENT"; //hmm
+static const char *TAG = "ROOM_TEMP"; //hmm
 
 //Helper function
 int8_t roundint8f(float value) {
@@ -1117,13 +1117,13 @@ static void http_test_task(void *pvParameters)
 
 static void http_test_task_mod(void *pvParameters)
 {
-    bool bEnaRemoteCtrl = false;
+    bool bEnaRemoteCtrl = true;
 
     float roomTemp = 0.0f;
     uint8_t tSnsr = 0u;
-    if (xQueueReceive(g_temp_queue, &roomTemp, 0)) {
-        uint8_t tSnsr = roundint8f(roomTemp);
-        // use tSnsr...
+    if (xQueueReceive(g_temp_queue, &roomTemp, 0))
+    {
+        tSnsr = roundint8f(roomTemp);
     }
 
     if (true == bEnaRemoteCtrl) //Configure external input to enable remote control
@@ -1358,9 +1358,9 @@ void app_main(void)
 #if CONFIG_IDF_TARGET_LINUX
     http_test_task_mod(NULL);
 #else
-    //WiFi operation on core 0
-    xTaskCreatePinnedToCore(&http_test_task_mod, "http_test_task_mod", 8192, NULL, 5, NULL, 0);
     //Sensor operation on core 1
-    xTaskCreatePinnedToCore(&adc_read, "adc_read", 4096, NULL, 3, NULL, 1);
+    xTaskCreatePinnedToCore(&adc_read, "adc_read", 4096, NULL, 3, &s_task_handle, 1);
+    //WiFi operation on core 0 - TO DO: Keep reading status and only update command via http task when needed
+    xTaskCreatePinnedToCore(&http_test_task_mod, "http_test_task_mod", 8192, NULL, 5, NULL, 0);
 #endif
 }
