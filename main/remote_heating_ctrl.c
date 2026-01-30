@@ -310,7 +310,20 @@ static uint8_t http_rest_with_url_get_set_temp(void)
         ESP_LOGI(TAG, "Empty response");
     }
 
-    sscanf(local_response_buffer, "{\"value\":%hhu", &tSet);
+    // Parse JSON response to extract the "value" field
+    // sscanf(local_response_buffer, "{\"value\": %hhu", &tSet);
+    const char *value_str = strstr(local_response_buffer, "\"value\"");
+    if (value_str != NULL) {
+        // Find the colon after "value"
+        value_str = strchr(value_str, ':');
+        if (value_str != NULL) {
+            // Parse the number (skip the colon and any whitespace)
+            sscanf(value_str + 1, "%hhu", &tSet);
+            ESP_LOGI(TAG, "Parsed temperature value: %u", tSet);
+        }
+    } else {
+        ESP_LOGE(TAG, "Could not find 'value' field in JSON response");
+    }
 
     esp_http_client_cleanup(client);
 
@@ -1126,8 +1139,8 @@ static void http_test_task_mod(void *pvParameters)
     while (1)
     {
         //Periodically check status
-        //Get control status
-        http_rest_with_url_get_ctrl_sts();
+        // //Get control status
+        // http_rest_with_url_get_ctrl_sts();
 
         //Get room temperature
         float roomTemp = 0.0f;
@@ -1147,11 +1160,13 @@ static void http_test_task_mod(void *pvParameters)
 
                 //Check set temperature
                 uint8_t tSet = http_rest_with_url_get_set_temp(); //Not working the best? Log and check
+                ESP_LOGI(TAG, "Set temperature retrieved: %u deg C", tSet);
+
                 //Post set temperature
                 if (tSet != 15u)
                 {
                     http_rest_with_url_post_set_temp(15u);
-                    ESP_LOGI(TAG, "Heater set temperature adjusted to 15 C");
+                    ESP_LOGI(TAG, "Heater set temperature adjusted to 15 deg C");
                 }
 
                 //Only if necessary:
@@ -1169,11 +1184,13 @@ static void http_test_task_mod(void *pvParameters)
 
                 //Check set temperature
                 uint8_t tSet = http_rest_with_url_get_set_temp();
+                ESP_LOGI(TAG, "Set temperature retrieved: %u deg C", tSet);
+
                 //Post set temperature
                 if (tSet != 30u)
                 {
                     http_rest_with_url_post_set_temp(30u);
-                    ESP_LOGI(TAG, "Heater set temperature adjusted to 30 C");
+                    ESP_LOGI(TAG, "Heater set temperature adjusted to 30 deg C");
                 }
 
                 // //Post operation mode
@@ -1195,8 +1212,8 @@ static void http_test_task_mod(void *pvParameters)
         }
 
         // //DEBUG
-        //Get control status
-        http_rest_with_url_get_ctrl_sts();
+        // //Get control status
+        // http_rest_with_url_get_ctrl_sts();
 
         // //Post operation mode
         // http_rest_with_url_post_op_mode("Control individually");
