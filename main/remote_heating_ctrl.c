@@ -302,16 +302,16 @@ static uint8_t http_rest_with_url_get_set_temp(void)
     // Display hex data
     // ESP_LOG_BUFFER_HEX(TAG, local_response_buffer, strlen(local_response_buffer));
 
-    // Display response as readable text
-    if (strlen(local_response_buffer) > 0) {
-        local_response_buffer[MAX_HTTP_OUTPUT_BUFFER] = '\0';  // Ensure null termination
-        ESP_LOGI(TAG, "Response: %s", local_response_buffer);
-    } else {
-        ESP_LOGI(TAG, "Empty response");
-    }
+    // // Display response as readable text - only for debug
+    // if (strlen(local_response_buffer) > 0) {
+    //     local_response_buffer[MAX_HTTP_OUTPUT_BUFFER] = '\0';  // Ensure null termination
+    //     ESP_LOGI(TAG, "Response: %s", local_response_buffer);
+    // } else {
+    //     ESP_LOGI(TAG, "Empty response");
+    // }
 
     // Parse JSON response to extract the "value" field
-    // sscanf(local_response_buffer, "{\"value\": %hhu", &tSet);
+    // sscanf(local_response_buffer, "{\"value\": %hhu", &tSet); //Simplified version that didnt work
     const char *value_str = strstr(local_response_buffer, "\"value\"");
     if (value_str != NULL) {
         // Find the colon after "value"
@@ -319,7 +319,7 @@ static uint8_t http_rest_with_url_get_set_temp(void)
         if (value_str != NULL) {
             // Parse the number (skip the colon and any whitespace)
             sscanf(value_str + 1, "%hhu", &tSet);
-            ESP_LOGI(TAG, "Parsed temperature value: %u", tSet);
+            // ESP_LOGI(TAG, "Parsed temperature value: %u", tSet);
         }
     } else {
         ESP_LOGE(TAG, "Could not find 'value' field in JSON response");
@@ -328,6 +328,83 @@ static uint8_t http_rest_with_url_get_set_temp(void)
     esp_http_client_cleanup(client);
 
     return tSet;
+}
+
+static char* http_rest_with_url_get_op_mod(void)
+{
+    static char opMod[64] = {0};  // Static buffer to store operation mode
+    memset(opMod, 0, sizeof(opMod));  // Clear buffer before use
+
+    // Declare local_response_buffer with size (MAX_HTTP_OUTPUT_BUFFER + 1) to prevent out of bound access when
+    // it is used by functions like strlen(). The buffer should only be used upto size MAX_HTTP_OUTPUT_BUFFER
+    char local_response_buffer[MAX_HTTP_OUTPUT_BUFFER + 1] = {0};
+
+    esp_http_client_config_t config = {
+        .host = CONFIG_EXAMPLE_HTTP_ENDPOINT,
+        .path = "/operation-mode",
+        .query = NULL,
+        .event_handler = _http_event_handler,
+        .user_data = local_response_buffer,        // Pass address of local buffer to get response
+        .disable_auto_redirect = true,
+    };
+    ESP_LOGI(TAG, "HTTP request with url =>");
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+
+    if (client == NULL) {
+        ESP_LOGE(TAG, "Failed to initialize HTTP client");
+        strcpy(opMod, "");
+        return opMod;
+    }
+
+    // GET
+    esp_err_t err = esp_http_client_perform(client);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "HTTP GET Status = %d, content_length = %"PRId64,
+                esp_http_client_get_status_code(client),
+                esp_http_client_get_content_length(client));
+    } else {
+        ESP_LOGE(TAG, "HTTP GET request failed: %s", esp_err_to_name(err));
+    }
+
+    // Display response as readable text - only for debug
+    // if (strlen(local_response_buffer) > 0) {
+    //     local_response_buffer[MAX_HTTP_OUTPUT_BUFFER] = '\0';  // Ensure null termination
+    //     ESP_LOGI(TAG, "Response: %s", local_response_buffer);
+    // } else {
+    //     ESP_LOGI(TAG, "Empty response");
+    // }
+
+    // Parse JSON response to extract the "mode" field
+    const char *mode_str = strstr(local_response_buffer, "\"mode\"");
+    if (mode_str != NULL) {
+        // Find the colon after "mode"
+        mode_str = strchr(mode_str, ':');
+        if (mode_str != NULL) {
+            // Find the opening quote of the value
+            mode_str = strchr(mode_str, '\"');
+            if (mode_str != NULL) {
+                mode_str++;  // Skip the opening quote
+                // Find the closing quote and extract the string
+                const char *end_quote = strchr(mode_str, '\"');
+                if (end_quote != NULL) {
+                    int len = end_quote - mode_str;
+                    if (len < sizeof(opMod)) {
+                        strncpy(opMod, mode_str, len);
+                        opMod[len] = '\0';  // Null terminate
+                        // ESP_LOGI(TAG, "Parsed operation mode: %s", opMod);
+                    } else {
+                        ESP_LOGE(TAG, "Operation mode string too long");
+                    }
+                }
+            }
+        }
+    } else {
+        ESP_LOGE(TAG, "Could not find 'mode' field in JSON response");
+    }
+
+    esp_http_client_cleanup(client);
+
+    return opMod;
 }
 
 static void http_rest_with_url_get_ctrl_sts(void)
@@ -1154,9 +1231,13 @@ static void http_test_task_mod(void *pvParameters)
         {
             if (tSnsr > CONFIG_T_THRES_UPPR)
             {
-                //TO DO Check operation mode
-                //Post operation mode
-                http_rest_with_url_post_op_mode("Control individually");
+                //Check operation mode
+                char *opMod = http_rest_with_url_get_op_mod();
+                if (strcmp(opMod, "Control individually") != 0) {
+                    //Post operation mode if not correct
+                    http_rest_with_url_post_op_mode("Control individually");
+                    ESP_LOGI(TAG, "Operation mode changed to: Control individually");
+                }
 
                 //Check set temperature
                 uint8_t tSet = http_rest_with_url_get_set_temp(); //Not working the best? Log and check
@@ -1168,19 +1249,16 @@ static void http_test_task_mod(void *pvParameters)
                     http_rest_with_url_post_set_temp(15u);
                     ESP_LOGI(TAG, "Heater set temperature adjusted to 15 deg C");
                 }
-
-                //Only if necessary:
-                // //Post operation mode
-                // http_rest_with_url_post_op_mode("Control individually");
-
-                // //Post set temperature
-                // http_rest_with_url_post_set_temp(15u);
             }
             else if (tSnsr < CONFIG_T_THRES_LOWR)
             {
-                //TO DO Check operation mode
-                //Post operation mode
-                http_rest_with_url_post_op_mode("Control individually");
+                //Check operation mode
+                char *opMod = http_rest_with_url_get_op_mod();
+                if (strcmp(opMod, "Control individually") != 0) {
+                    //Post operation mode if not correct
+                    http_rest_with_url_post_op_mode("Control individually");
+                    ESP_LOGI(TAG, "Operation mode changed to: Control individually");
+                }
 
                 //Check set temperature
                 uint8_t tSet = http_rest_with_url_get_set_temp();
@@ -1192,23 +1270,24 @@ static void http_test_task_mod(void *pvParameters)
                     http_rest_with_url_post_set_temp(30u);
                     ESP_LOGI(TAG, "Heater set temperature adjusted to 30 deg C");
                 }
-
-                // //Post operation mode
-                // http_rest_with_url_post_op_mode("Control individually");
-
-                // //Post set temperature
-                // http_rest_with_url_post_set_temp(30u);
             }
             else
             {
+                //This part needs to be improved, a state machine with an INIT would be better, to not be in this limbo
                 //Do nothing
             }
         }
         else
         {
-            //TO DO Check operation mode
-            //Post operation mode
-            http_rest_with_url_post_op_mode("Weekly program");
+            //Check operation mode
+            char *opMod = http_rest_with_url_get_op_mod();
+            if (strcmp(opMod, "Weekly program") != 0) {
+                //Post operation mode if not correct
+                http_rest_with_url_post_op_mode("Weekly program");
+                ESP_LOGI(TAG, "Operation mode changed to: Weekly program");
+            }
+            // //Post operation mode
+            // http_rest_with_url_post_op_mode("Weekly program");
         }
 
         // //DEBUG
