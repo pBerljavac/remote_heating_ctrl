@@ -42,6 +42,7 @@
 #define ADC_READ_ATTEN                   ADC_ATTEN_DB_12
 #define ADC_READ_BIT_WIDTH               SOC_ADC_DIGI_MAX_BITWIDTH
 #define ADC_READ_LEN 256
+#define THINGSPEAK_KEY  "RIFGQ739FZQNGR9K"
 
 static TaskHandle_t s_task_handle;
 static QueueHandle_t g_temp_queue = NULL;
@@ -285,7 +286,6 @@ static uint8_t http_rest_with_url_get_set_temp(void)
         .user_data = local_response_buffer,        // Pass address of local buffer to get response
         .disable_auto_redirect = true,
     };
-    ESP_LOGI(TAG, "HTTP request with url =>");
     esp_http_client_handle_t client = esp_http_client_init(&config);
 
     if (client == NULL) {
@@ -357,7 +357,6 @@ static void http_rest_with_url_get_op_mod(char *opMod, size_t opMod_size)
         .user_data = local_response_buffer,        // Pass address of local buffer to get response
         .disable_auto_redirect = true,
     };
-    ESP_LOGI(TAG, "HTTP request with url =>");
     esp_http_client_handle_t client = esp_http_client_init(&config);
 
     if (client == NULL) {
@@ -429,7 +428,6 @@ static void http_rest_with_url_get_ctrl_sts(void)
         .user_data = local_response_buffer,        // Pass address of local buffer to get response
         .disable_auto_redirect = true,
     };
-    ESP_LOGI(TAG, "HTTP request with url =>");
     esp_http_client_handle_t client = esp_http_client_init(&config);
 
     if (client == NULL) {
@@ -1181,6 +1179,29 @@ static void http_partial_download(void)
 }
 #endif // CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
 
+void send_to_thingspeak(uint8_t roomTemp, uint8_t setTemp)
+{
+    char thingSpeakUrl[256];
+    sprintf(thingSpeakUrl, "http://api.thingspeak.com/update?api_key=%s&field1=%d&field2=%d", THINGSPEAK_KEY, roomTemp, setTemp);
+    esp_http_client_config_t config = {
+        .url = thingSpeakUrl,
+        .method = HTTP_METHOD_GET
+    };
+
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+
+    esp_err_t err = esp_http_client_perform(client);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "HTTP GET Status = %d, content_length = %"PRId64,
+                esp_http_client_get_status_code(client),
+                esp_http_client_get_content_length(client));
+    } else {
+        ESP_LOGE(TAG, "HTTP GET request failed: %s", esp_err_to_name(err));
+    }
+
+    esp_http_client_cleanup(client);
+}
+
 static void http_test_task(void *pvParameters)
 {
     http_rest_with_url();
@@ -1256,6 +1277,8 @@ static void http_test_task_mod(void *pvParameters)
 
             case HEATG_CTRL_ST_OFF:
                 //In-state action
+                tSet = http_rest_with_url_get_set_temp();
+                ESP_LOGI(TAG, "Set temperature retrieved: %u deg C", tSet);
 
                 //Check operation mode
                 http_rest_with_url_get_op_mod(opMod, sizeof(opMod));
@@ -1274,7 +1297,6 @@ static void http_test_task_mod(void *pvParameters)
 
             case HEATG_CTRL_ST_IDLE:
                 //In-state action
-
                 //Check operation mode
                 http_rest_with_url_get_op_mod(opMod, sizeof(opMod));
                 if (strcmp(opMod, "Control individually") != 0) {
@@ -1282,7 +1304,6 @@ static void http_test_task_mod(void *pvParameters)
                     http_rest_with_url_post_op_mode("Control individually");
                     ESP_LOGI(TAG, "Operation mode changed to: Control individually");
                 }
-
                 //Check set temperature
                 tSet = http_rest_with_url_get_set_temp(); //Not working the best? Log and check
                 ESP_LOGI(TAG, "Set temperature retrieved: %u deg C", tSet);
@@ -1306,7 +1327,6 @@ static void http_test_task_mod(void *pvParameters)
 
             case HEATG_CTRL_ST_HEATING:
                 //In-state action
-
                 //Check operation mode
                 http_rest_with_url_get_op_mod(opMod, sizeof(opMod));
                 if (strcmp(opMod, "Control individually") != 0) {
@@ -1314,7 +1334,6 @@ static void http_test_task_mod(void *pvParameters)
                     http_rest_with_url_post_op_mode("Control individually");
                     ESP_LOGI(TAG, "Operation mode changed to: Control individually");
                 }
-
                 //Check set temperature
                 tSet = http_rest_with_url_get_set_temp();
                 ESP_LOGI(TAG, "Set temperature retrieved: %u deg C", tSet);
@@ -1369,6 +1388,8 @@ static void http_test_task_mod(void *pvParameters)
                 heatgCtrlSt = HEATG_CTRL_ST_OFF;
                 break;
         }
+
+        send_to_thingspeak(tSnsr, tSet);
 
         vTaskDelay(CONFIG_DISPLAY_PERIOD / portTICK_PERIOD_MS);
     }
