@@ -48,6 +48,16 @@ static QueueHandle_t g_temp_queue = NULL;
 
 static const char *TAG = "ROOM_TEMP"; //hmm
 
+typedef enum HeatgCtrlSt
+{
+    HEATG_CTRL_ST_INIT = 0,
+    HEATG_CTRL_ST_OFF,
+    HEATG_CTRL_ST_IDLE,
+    HEATG_CTRL_ST_HEATING,
+    HEATG_CTRL_ST_DEBUG,
+    HEATG_CTRL_ST_ERROR
+} tHeatgCtrlSt;
+
 //Helper function
 int8_t roundint8f(float value) {
     return (int8_t)(value + (value >= 0 ? 0.5f : -0.5f));
@@ -330,10 +340,10 @@ static uint8_t http_rest_with_url_get_set_temp(void)
     return tSet;
 }
 
-static char* http_rest_with_url_get_op_mod(void)
+static void http_rest_with_url_get_op_mod(char *opMod, size_t opMod_size)
 {
-    static char opMod[64] = {0};  // Static buffer to store operation mode
-    memset(opMod, 0, sizeof(opMod));  // Clear buffer before use
+    // static char opMod[64] = {0};  // Static buffer to store operation mode
+    // memset(opMod, 0, sizeof(opMod));  // Clear buffer before use
 
     // Declare local_response_buffer with size (MAX_HTTP_OUTPUT_BUFFER + 1) to prevent out of bound access when
     // it is used by functions like strlen(). The buffer should only be used upto size MAX_HTTP_OUTPUT_BUFFER
@@ -353,7 +363,7 @@ static char* http_rest_with_url_get_op_mod(void)
     if (client == NULL) {
         ESP_LOGE(TAG, "Failed to initialize HTTP client");
         strcpy(opMod, "");
-        return opMod;
+        return;
     }
 
     // GET
@@ -388,7 +398,7 @@ static char* http_rest_with_url_get_op_mod(void)
                 const char *end_quote = strchr(mode_str, '\"');
                 if (end_quote != NULL) {
                     int len = end_quote - mode_str;
-                    if (len < sizeof(opMod)) {
+                    if (len < (int)opMod_size) {
                         strncpy(opMod, mode_str, len);
                         opMod[len] = '\0';  // Null terminate
                         // ESP_LOGI(TAG, "Parsed operation mode: %s", opMod);
@@ -403,8 +413,6 @@ static char* http_rest_with_url_get_op_mod(void)
     }
 
     esp_http_client_cleanup(client);
-
-    return opMod;
 }
 
 static void http_rest_with_url_get_ctrl_sts(void)
@@ -1213,9 +1221,14 @@ static void http_test_task(void *pvParameters)
 
 static void http_test_task_mod(void *pvParameters)
 {
+    static tHeatgCtrlSt heatgCtrlSt = HEATG_CTRL_ST_INIT;
+    static char opMod[64] = {0};  // Static buffer to store operation mode
+    memset(opMod, 0, sizeof(opMod));  // Clear buffer before use
+    uint8_t tSet = 0;
+
     while (1)
     {
-        //Periodically check status
+        //Periodically check status to update visualization
         // //Get control status
         // http_rest_with_url_get_ctrl_sts();
 
@@ -1227,12 +1240,43 @@ static void http_test_task_mod(void *pvParameters)
             tSnsr = roundint8f(roomTemp);
         }
 
-        if (1 == CONFIG_ENA_REMOTE_CTRL)
+        switch (heatgCtrlSt)
         {
-            if (tSnsr > CONFIG_T_THRES_UPPR)
-            {
+            case HEATG_CTRL_ST_INIT:
+                //Transition action
+                if (0 == CONFIG_ENA_REMOTE_CTRL_DEBUG)
+                {
+                    heatgCtrlSt = HEATG_CTRL_ST_OFF;
+                }
+                else
+                {
+                    heatgCtrlSt = HEATG_CTRL_ST_DEBUG;
+                }
+                break;
+
+            case HEATG_CTRL_ST_OFF:
+                //In-state action
+
                 //Check operation mode
-                char *opMod = http_rest_with_url_get_op_mod();
+                http_rest_with_url_get_op_mod(opMod, sizeof(opMod));
+                if (strcmp(opMod, "Weekly program") != 0) {
+                    //Post operation mode if not correct
+                    http_rest_with_url_post_op_mode("Weekly program");
+                    ESP_LOGI(TAG, "Operation mode changed to: Weekly program");
+                }
+
+                //Transition action
+                if (1 == CONFIG_ENA_REMOTE_CTRL)
+                {
+                    heatgCtrlSt = HEATG_CTRL_ST_IDLE;
+                }
+                break;
+
+            case HEATG_CTRL_ST_IDLE:
+                //In-state action
+
+                //Check operation mode
+                http_rest_with_url_get_op_mod(opMod, sizeof(opMod));
                 if (strcmp(opMod, "Control individually") != 0) {
                     //Post operation mode if not correct
                     http_rest_with_url_post_op_mode("Control individually");
@@ -1240,20 +1284,31 @@ static void http_test_task_mod(void *pvParameters)
                 }
 
                 //Check set temperature
-                uint8_t tSet = http_rest_with_url_get_set_temp(); //Not working the best? Log and check
+                tSet = http_rest_with_url_get_set_temp(); //Not working the best? Log and check
                 ESP_LOGI(TAG, "Set temperature retrieved: %u deg C", tSet);
-
                 //Post set temperature
                 if (tSet != 15u)
                 {
                     http_rest_with_url_post_set_temp(15u);
                     ESP_LOGI(TAG, "Heater set temperature adjusted to 15 deg C");
                 }
-            }
-            else if (tSnsr < CONFIG_T_THRES_LOWR)
-            {
+
+                //Transition action
+                if (0 == CONFIG_ENA_REMOTE_CTRL)
+                {
+                    heatgCtrlSt = HEATG_CTRL_ST_OFF;
+                }
+                else if (tSnsr < CONFIG_T_THRES_LOWR)
+                {
+                    heatgCtrlSt = HEATG_CTRL_ST_HEATING;
+                }
+                break;
+
+            case HEATG_CTRL_ST_HEATING:
+                //In-state action
+
                 //Check operation mode
-                char *opMod = http_rest_with_url_get_op_mod();
+                http_rest_with_url_get_op_mod(opMod, sizeof(opMod));
                 if (strcmp(opMod, "Control individually") != 0) {
                     //Post operation mode if not correct
                     http_rest_with_url_post_op_mode("Control individually");
@@ -1261,52 +1316,60 @@ static void http_test_task_mod(void *pvParameters)
                 }
 
                 //Check set temperature
-                uint8_t tSet = http_rest_with_url_get_set_temp();
+                tSet = http_rest_with_url_get_set_temp();
                 ESP_LOGI(TAG, "Set temperature retrieved: %u deg C", tSet);
-
                 //Post set temperature
                 if (tSet != 25u)
                 {
                     http_rest_with_url_post_set_temp(25u);
                     ESP_LOGI(TAG, "Heater set temperature adjusted to 25 deg C");
                 }
-            }
-            else
-            {
-                //This part needs to be improved, a state machine with an INIT would be better, to not be in this limbo
-                //Do nothing
-            }
+
+                //Transition action
+                if (0 == CONFIG_ENA_REMOTE_CTRL)
+                {
+                    heatgCtrlSt = HEATG_CTRL_ST_OFF;
+                }
+                else if (tSnsr > CONFIG_T_THRES_UPPR)
+                {
+                    heatgCtrlSt = HEATG_CTRL_ST_IDLE;
+                }
+                break;
+
+            case HEATG_CTRL_ST_DEBUG:
+                //In-state action
+
+                //Get control status
+                http_rest_with_url_get_ctrl_sts();
+
+                //Post operation mode
+                http_rest_with_url_post_op_mode("Control individually");
+                // http_rest_with_url_post_op_mode("Weekly program");
+
+                //Get control status
+                http_rest_with_url_get_ctrl_sts();
+
+                //Post set temperature
+                // http_rest_with_url_post_set_temp(15u);
+                http_rest_with_url_post_set_temp(25u);
+
+                //Get control status
+                http_rest_with_url_get_ctrl_sts();
+
+                // //Transition action
+                // heatgCtrlSt = HEATG_CTRL_ST_OFF;
+                break;
+
+            case HEATG_CTRL_ST_ERROR:
+                //TO DO
+                break;
+
+            default:
+                //Transition action
+                heatgCtrlSt = HEATG_CTRL_ST_OFF;
+                break;
         }
-        else
-        {
-            //Check operation mode
-            char *opMod = http_rest_with_url_get_op_mod();
-            if (strcmp(opMod, "Weekly program") != 0) {
-                //Post operation mode if not correct
-                http_rest_with_url_post_op_mode("Weekly program");
-                ESP_LOGI(TAG, "Operation mode changed to: Weekly program");
-            }
-            // //Post operation mode
-            // http_rest_with_url_post_op_mode("Weekly program");
-        }
 
-        // //DEBUG
-        // //Get control status
-        // http_rest_with_url_get_ctrl_sts();
-
-        // //Post operation mode
-        // http_rest_with_url_post_op_mode("Control individually");
-        // http_rest_with_url_post_op_mode("Weekly program");
-
-        // //Get control status
-        // http_rest_with_url_get_ctrl_sts();
-
-        // //Post set temperature
-        // http_rest_with_url_post_set_temp(15u);
-        // http_rest_with_url_post_set_temp(35u);
-
-        // //Get control status
-        // http_rest_with_url_get_ctrl_sts();
         vTaskDelay(CONFIG_DISPLAY_PERIOD / portTICK_PERIOD_MS);
     }
 // #if !CONFIG_IDF_TARGET_LINUX

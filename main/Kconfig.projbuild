@@ -15,6 +15,12 @@ menu "Example Configuration"
         default 1
         help
             Enable remote control.
+    config ENA_REMOTE_CTRL_DEBUG
+        int "Enable remote control debug"
+        range 0 1
+        default 0
+        help
+            Enable remote control debug.
     config T_THRES_UPPR
         int "Upper temperature threshold"
         range 0 50
