@@ -1265,10 +1265,10 @@ static void http_test_task_mod(void *pvParameters)
                 ESP_LOGI(TAG, "Set temperature retrieved: %u deg C", tSet);
 
                 //Post set temperature
-                if (tSet != 30u)
+                if (tSet != 25u)
                 {
-                    http_rest_with_url_post_set_temp(30u);
-                    ESP_LOGI(TAG, "Heater set temperature adjusted to 30 deg C");
+                    http_rest_with_url_post_set_temp(25u);
+                    ESP_LOGI(TAG, "Heater set temperature adjusted to 25 deg C");
                 }
             }
             else
